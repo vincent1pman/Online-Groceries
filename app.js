@@ -1,11 +1,22 @@
-const express = require('express');
+if (process.env.NODE_ENV !== 'production') {
+  
+  require('dotenv').config()
+}
+
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY
+const stripePublicKey = process.env.STRIPE_PUBLIC_KEY
+
+const express = require('express')
+const app = express()
+const fs = require('fs')
+const stripe = require('stripe')(stripeSecretKey)
 const expressLayouts = require('express-ejs-layouts');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const flash = require('connect-flash');
 const session = require('express-session');
 
-const app = express();
+
 
 // Passport Config
 require('./config/passport')(passport);
@@ -57,6 +68,67 @@ app.use(function(req, res, next) {
 app.use('/', require('./routes/index.js'));
 app.use('/users', require('./routes/users.js'));
 
-const PORT = process.env.PORT || 5000;
+//
+app.set('view engine', 'ejs')
+app.use(express.json())
+app.use(express.static('public'))
 
-app.listen(PORT, console.log(`Server started on port ${PORT}`));
+app.get('/store', function(req, res) {
+  fs.readFile('items.json', function(error, data) {
+    if (error) {
+      res.status(500).end()
+    } else {
+      res.render('store.ejs', {
+        stripePublicKey: stripePublicKey,
+        items: JSON.parse(data)
+      })
+    }
+  })
+})
+
+app.get('/store.html', function(req, res) {
+  fs.readFile('items.json', function(error, data) {
+    if (error) {
+      res.status(500).end()
+    } else {
+      res.render('store.ejs', {
+        stripePublicKey: stripePublicKey,
+        items: JSON.parse(data)
+      })
+    }
+  })
+})
+
+app.post('/purchase', function(req, res) {
+  fs.readFile('items.json', function(error, data) {
+    if (error) {
+      res.status(500).end()
+    } else {
+      const itemsJson = JSON.parse(data)
+      const itemsArray = itemsJson.music.concat(itemsJson.merch)
+      let total = 0
+      req.body.items.forEach(function(item) {
+        const itemJson = itemsArray.find(function(i) {
+          return i.id == item.id
+        })
+        total = total + itemJson.price * item.quantity
+      })
+
+      stripe.charges.create({
+        amount: total,
+        source: req.body.stripeTokenId,
+        currency: 'usd'
+      }).then(function() {
+        console.log('Charge Successful')
+        res.json({ message: 'Successfully purchased items' })
+      }).catch(function() {
+        console.log('Charge Fail')
+        res.status(500).end()
+      })
+    }
+  })
+})
+
+//
+
+app.listen(3000)
